@@ -1,0 +1,19 @@
+{
+  "name": "@xiaokexiang/agent-skills",
+  "version": "0.0.0",
+  "description": "Claude Code Skills Collection",
+  "files": [
+    "skills/",
+    "README.md"
+  ],
+  "keywords": [
+    "claude-code",
+    "skills"
+  ],
+  "author": "xiaokexiang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaokexiang/agent-skills.git"
+  }
+}
