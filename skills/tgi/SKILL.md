@@ -1,23 +1,25 @@
 ---
 name: tgi
-description: |
-  文生图工具 - 使用阿里云 DashScope API 生成图片。支持千问(Qwen-Image)和万相(Wan)系列模型。
-
-  **务必主动触发此 Skill 的场景：**
-  - 用户说"生成一张图片"、"帮我画"、"文生图"、"用AI画图"
-  - 用户提到 AI 绘画、图像生成、文字转图片
-  - 用户描述一个场景并想要看到对应的图片
-  - 用户使用 /tgi 命令
-  - 用户需要创建任何类型的图片（头像、风景、插画、写实照片等）
-
-  **支持的模型：**
-  - 千问系列：qwen-image-2.0-pro, qwen-image-2.0-max, qwen-image-2.0, qwen-image-max, qwen-image-plus
-  - 万相系列：wan2.7-image-pro, wan2.7-image, wan2.6-image, wan2.6-t2i, wan2.5-t2i-preview
+description: 文生图工具 - 使用阿里云 DashScope API 生成图片。支持千问(Qwen-Image)和万相(Wan)系列模型。
 ---
 
 # TGI (Text Generate Image) Skill
 
 基于阿里云 DashScope API 的统一文生图工具，支持千问和万相两大模型系列。
+
+## 触发场景
+
+**务必主动触发此 Skill 的场景：**
+- 用户说"生成一张图片"、"帮我画"、"文生图"、"用AI画图"
+- 用户提到 AI 绘画、图像生成、文字转图片
+- 用户描述一个场景并想要看到对应的图片
+- 用户使用 /tgi 命令
+- 用户需要创建任何类型的图片（头像、风景、插画、写实照片等）
+
+## 支持的模型
+
+- **千问系列：** qwen-image-2.0-pro, qwen-image-2.0-max, qwen-image-2.0, qwen-image-max, qwen-image-plus
+- **万相系列：** wan2.7-image-pro, wan2.7-image, wan2.6-image, wan2.6-t2i, wan2.5-t2i-preview
 
 ## 执行流程
 
@@ -33,7 +35,7 @@ description: |
 | 通用图像生成 | qwen-image-2.0-pro（默认） |
 | 4K 超高清 | wan2.7-image-pro |
 | 组图/连环画 | wan2.7-image-pro（支持 sequential 模式） |
-| 需要反向提示词 | 千问系列（qwen-image-*) |
+| 需要反向提示词 | 千问系列（qwen-image-*） |
 
 ## 注意事项
 
