@@ -56,22 +56,38 @@ db-cli -c 'mysql://root:password@localhost:3306' exec -q 'SELECT 1; INVALID_SQL;
 ### 3. 导入 SQL 文件
 
 ```bash
-# 导入到 MySQL（推荐：在 SQL 文件中使用 USE 语句）
+# 导入单个 SQL 文件到 MySQL（推荐：在 SQL 文件中使用 USE 语句）
 db-cli -c 'mysql://root:password@localhost:3306' import -f data.sql
 
-# 导入到 MySQL（使用 -s 参数指定数据库）
+# 导入单个 SQL 文件到 MySQL（使用 -s 参数指定数据库）
 db-cli -c 'mysql://root:password@localhost:3306' import -s database_name -f data.sql
 
 # 导入到达梦数据库
 db-cli -c 'dm://SYSDBA:SYSDBA001@localhost:5236' import -f data.sql
 
-# 遇到错误继续执行
+# 批量导入 - 使用通配符匹配多个文件
+db-cli -c 'dm://SYSDBA:SYSDBA001@localhost:5236' import -f 'boc-document/dm/sql/*.sql'
+
+# 批量导入 - 递归匹配子目录
+db-cli -c 'dm://SYSDBA:SYSDBA001@localhost:5236' import -f 'boc-document/dm/sql/**/*.sql'
+
+# 批量导入 - 按前缀匹配
+db-cli -c 'dm://SYSDBA:SYSDBA001@localhost:5236' import -f 'boc-document/dm/sql/proc-*.sql'
+
+# 遇到错误继续执行（默认：遇到错误立即停止并回滚）
 db-cli -c 'mysql://root:password@localhost:3306' import -f data.sql --continue-on-error
 ```
 
 **SQL 文件格式说明**：
 - MySQL: 使用 `;` 作为语句分隔符，支持 `#` 和 `--` 注释，可以在文件开头使用 `USE database_name;` 选择数据库
 - 达梦数据库：支持 `/` 和 `;` 作为语句分隔符，支持 `--` 注释
+
+**批量导入说明**：
+- 支持通配符：`*.sql` 匹配单目录，`**/*.sql` 递归匹配子目录
+- 多个文件按顺序依次执行，每个文件内的事务独立提交
+- 如果某个文件执行失败：
+  - **默认模式**：立即停止，回滚当前文件的事务，后续文件不再执行
+  - **`--continue-on-error` 模式**：继续执行后续文件，最终汇总显示所有错误
 
 ### 4. 导出数据
 
