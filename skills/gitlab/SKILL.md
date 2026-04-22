@@ -1,6 +1,6 @@
 ---
 name: gitlab
-description: 查询 GitLab 数据（项目、提交、MR、流水线等）。查询操作直接执行，修改操作需二次确认。
+description: 查询 GitLab 数据（项目、提交、MR、流水线、群组等）。查询操作直接执行，修改操作需二次确认。必须使用 gitbeaker CLI (gb) 命令执行操作，禁止使用 curl 直接调用 API。
 ---
 
 ## GitLab 数据访问技能
@@ -28,122 +28,122 @@ GITLAB_TOKEN=your-personal-access-token # GitLab 个人访问令牌
 - 如果未提供，检查环境变量 `GITLAB_HOST` 和 `GITLAB_TOKEN`
 - 如果都未设置，提示用户先配置认证信息
 
-### 命令匹配与执行流程
+---
 
-1. **解析用户请求** — 确定用户想要查询的数据类型（项目、提交、合并请求、流水线等）
-2. **检查环境变量** — 验证 `GITLAB_HOST` 和 `GITLAB_TOKEN` 是否已设置
-3. **匹配命令** — 选择最合适的 `gitbeaker` CLI 命令
-4. **权限判断** — 判断是查询操作还是修改操作
-5. **执行**：
-   - **查询操作**：直接执行
-   - **修改/删除/新增操作**：必须先向用户展示将要执行的完整命令，等待用户明确确认（回复"是"、"确认"、"yes"等）后才能执行
+## 核心限制条件
 
-### 操作分类
+### 1. 命令使用限制（重要）
+
+**必须使用 `gitbeaker` CLI 命令（或其别名 `gb`）执行所有 GitLab 操作。**
+
+- ✅ 允许：`gb projects all`、`gitbeaker commits show --project-id=xxx`
+- ❌ 禁止：使用 `curl` 直接调用 GitLab API
+
+此限制原因：
+- `gitbeaker` CLI 封装了 API 细节，处理了认证、错误格式化等
+- 使用统一工具链，便于维护和调试
+- 避免手动构造 API URL 和处理认证头的复杂性
+
+### 2. 命令选择流程
+
+每次执行操作前，必须遵循以下流程：
+
+#### 步骤 1：解析用户意图
+- 确定用户想要操作的数据类型（项目、提交、MR、流水线、文件等）
+- 确定操作类型（查询、创建、修改、删除）
+
+#### 步骤 2：选择最合适的命令
+- 根据用户意图匹配 `references/usage.md` 中的命令
+- 确保参数完整且格式正确
+
+#### 步骤 3：验证命令可用性
+- 检查命令语法是否正确
+- 确认所有必需参数已提供
+
+#### 步骤 4：处理命令失败
+如果首选命令执行失败：
+1. **分析错误信息** - 理解失败原因（参数错误、权限不足、资源不存在等）
+2. **寻找替代命令** - 回到 `references/usage.md` 查找其他可能的命令形式
+3. **调整参数重试** - 根据错误信息修正参数后重试
+4. **报告用户** - 如果所有合理命令都失败，向用户报告详细错误信息
+
+**示例：**
+```
+用户：查看项目 A 的提交历史
+首选命令：gb commits all --project-id=A
+失败后：尝试 gb commits all --project-id=A --ref-name=main
+仍失败：报告用户"无法获取提交历史，可能原因：项目不存在、权限不足、或 GitLab 服务不可用"
+```
+
+### 3. 操作分类与执行规则
 
 #### 查询操作（可直接执行）
 
-| 数据类型 | 命令示例 |
+| 数据类型 | 命令模式 |
 |---------|---------|
-| 列出所有项目 | `gb projects all --gb-token=<token> --gb-host=<host>` |
-| 获取项目详情 | `gb projects show --project-id=<project>` |
-| 列出项目提交 | `gb commits all --project-id=<project> --ref-name=<branch>` |
-| 获取提交详情 | `gb commits show --project-id=<project> <sha>` |
-| 列出合并请求 | `gb merge-requests all --project-id=<project>` |
-| 获取合并请求详情 | `gb merge-requests show --project-id=<project> <iid>` |
-| 列出流水线 | `gb pipelines all --project-id=<project>` |
-| 获取流水线详情 | `gb pipelines show --project-id=<project> <pipeline-id>` |
-| 列出项目成员 | `gb project-members all --project-id=<project>` |
-| 获取作业日志 | `gb jobs show-log --project-id=<project> --job-id=<job-id>` |
-| 列出 Issues | `gb issues all --project-id=<project>` |
-| 获取 Issue 详情 | `gb issues show --project-id=<project> <iid>` |
-| 列出分支 | `gb branches all --project-id=<project>` |
-| 列出标签 | `gb tags all --project-id=<project>` |
-| 获取仓库树 | `gb repositories tree --project-id=<project>` |
-| 获取文件内容 | `gb repository-files show --project-id=<project> --file-path=<path> --ref=<branch>` |
-
-**注意：**
-- 项目名称直接使用，如 `PaaS_BOC/boc-document`，**不要**对 `/` 进行 URL 转义
-- `--project-id` 参数可以是数字 ID 或项目路径（格式：`group/project`）
+| 项目列表/详情 | `gb projects all`、`gb projects show` |
+| 提交列表/详情 | `gb commits all`、`gb commits show` |
+| MR 列表/详情 | `gb merge-requests all`、`gb merge-requests show` |
+| 流水线列表/详情 | `gb pipelines all`、`gb pipelines show` |
+| Issue 列表/详情 | `gb issues all`、`gb issues show` |
+| 分支/标签列表 | `gb branches all`、`gb tags all` |
+| 文件内容 | `gb repository-files show` |
+| 项目成员 | `gb project-members all` |
+| 作业日志 | `gb jobs show-log` |
+| 仓库树 | `gb repositories tree` |
+| **群组列表/详情** | `gb groups all`、`gb groups show` |
+| **群组成员** | `gb group-members all` |
+| **群组项目** | `gb groups all-projects` |
+| **群组子群组** | `gb groups all-subgroups` |
 
 #### 修改操作（需二次确认）
 
-| 操作类型 | 命令示例 |
-|---------|---------|
-| 创建项目 | `gb projects create --name=<name> --path=<path>` |
-| 删除项目 | `gb projects remove --project-id=<id>` |
-| 创建合并请求 | `gb merge-requests create --project-id=<id> --source-branch=<src> --target-branch=<tgt> --title=<title>` |
-| 合并 MR | `gb merge-requests accept --project-id=<id> <iid>` |
-| 关闭 MR | `gb merge-requests edit --project-id=<id> <iid> --state-event=closed` |
-| 创建 Issue | `gb issues create --project-id=<id> --title=<title> --description=<desc>` |
-| 关闭 Issue | `gb issues edit --project-id=<id> <iid> --state-event=close` |
-| 触发流水线 | `gb pipelines create --project-id=<id> --ref=<branch>` |
-| 取消流水线 | `gb pipelines cancel --project-id=<id> <pipeline-id>` |
-| 创建分支 | `gb branches create --project-id=<id> --branch=<name> --ref=<source>` |
-| 删除分支 | `gb branches remove --project-id=<id> <branch>` |
-| 创建文件 | `gb repository-files create --project-id=<id> --file-path=<path> --content=<content> --branch=<branch> --commit-message=<msg>` |
-| 更新文件 | `gb repository-files edit --project-id=<id> --file-path=<path> --content=<content> --branch=<branch> --commit-message=<msg>` |
-| 删除文件 | `gb repository-files remove --project-id=<id> --file-path=<path> --branch=<branch> --commit-message=<msg>` |
+| 操作类型 | 命令模式 | 确认要求 |
+|---------|---------|---------|
+| 创建项目/分支/文件/MR/Issue/流水线/**群组** | `gb * create` | 必须展示完整命令并等待确认 |
+| 更新文件/MR/Issue/**群组** | `gb * edit` | 必须展示完整命令并等待确认 |
+| 删除项目/分支/文件/**群组** | `gb * remove` | 必须展示完整命令并等待确认 |
+| 合并 MR | `gb merge-requests accept` | 必须展示完整命令并等待确认 |
+| 取消流水线 | `gb pipelines cancel` | 必须展示完整命令并等待确认 |
+| 添加/编辑/移除**群组成员** | `gb group-members add/edit/remove` | 必须展示完整命令并等待确认 |
 
-### 二次确认流程
+**二次确认流程：**
+1. 向用户展示将要执行的完整命令
+2. 说明此操作的影响
+3. 等待用户明确回复"是"、"确认"、"yes"等肯定词
+4. 收到确认后再执行
 
-当用户请求涉及修改、删除或新增操作时：
+---
 
-1. **向用户展示将要执行的命令**：
-   ```
-   ⚠️ 此操作将修改 GitLab 数据
+## 执行流程总结
 
-   将要执行的命令：
-   gitbeaker <command> <args>
-
-   是否确认执行？(是/否)
-   ```
-
-2. **等待用户明确确认** — 用户必须回复"是"、"确认"、"yes"、"confirm"等肯定词
-
-3. **执行命令** — 收到确认后再执行
-
-4. **取消操作** — 用户回复"否"、"取消"、"no"、"cancel"等则不执行
-
-### 命令输出处理
-
-- 默认输出：直接展示 `gitbeaker` 命令的原始输出
-- 格式化输出：对于结构化数据（如 JSON），可以适当格式化以便阅读
-- 错误处理：如果命令执行失败，向用户展示错误信息并提供可能的解决建议
-
-### 常用查询示例
-
-**查询所有项目：**
-```bash
-gb projects all --gb-token=<token> --gb-host=<host>
+```
+1. 接收用户请求
+       ↓
+2. 检查认证信息（命令行参数 > 环境变量）
+       ↓
+3. 解析意图 → 选择最匹配的 gitbeaker 命令
+       ↓
+4. 判断操作类型
+   ├─ 查询操作 → 直接执行
+   └─ 修改操作 → 二次确认 → 执行
+       ↓
+5. 处理结果
+   ├─ 成功 → 返回结果
+   └─ 失败 → 分析错误 → 尝试替代命令 → 仍失败则报告用户
 ```
 
-**查询特定项目的提交历史（特定分支）：**
-```bash
-gb commits all --project-id=<group/project> --ref-name=<branch-name> --gb-token=<token> --gb-host=<host>
-```
-示例：`gb commits all --project-id="PaaS_BOC/boc-document" --ref-name="BOC3.10-TY" --gb-host="http://223.112.233.194:8888" --gb-token="xxx"`
+---
 
-**查询特定项目的打开的合并请求：**
-```bash
-gb merge-requests all --project-id=<group/project> --state=opened
-```
+## 参数规范
 
-**查询特定流水线详情：**
-```bash
-gb pipelines show --project-id=<project> <pipeline-id>
-```
+1. **项目名称格式**：直接使用原始格式（如 `PaaS_BOC/boc-document`），`/` 不需要 URL 转义
+2. **项目 ID 格式**：支持数字 ID（如 `1997`）或项目路径（如 `group/project`）
+3. **群组 ID 格式**：支持数字 ID 或群组路径（如 `group-name` 或 `parent/sub-group`）
+4. **短别名**：可以使用 `gb` 代替 `gitbeaker`
+5. **群组成员访问级别**：10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner
 
-**查询文件内容：**
-```bash
-gb repository-files show --project-id=<project> --file-path=<file-path> --ref=<branch>
-```
-
-### 注意事项
-
-1. **项目名称**：直接使用原始格式，如 `PaaS_BOC/boc-document`，其中的 `/` 不需要 URL 转义
-2. **项目 ID 格式**：`--project-id` 参数支持数字 ID（如 `1997`）或项目路径（如 `PaaS_BOC/boc-document`）
-3. **短别名**：可以使用 `gb` 代替 `gitbeaker`
-4. **认证优先级**：命令行参数（`--gb-token`、`--gb-host`）优先于环境变量
+---
 
 ## 参考文档
 
