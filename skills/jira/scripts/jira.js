@@ -384,6 +384,14 @@ function parseCsv(value) {
     .filter(Boolean);
 }
 
+function normalizeApiPath(value) {
+  if (!value) {
+    return value;
+  }
+
+  return value.startsWith('/') ? value : `/${value}`;
+}
+
 function printJson(data) {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
@@ -509,14 +517,15 @@ async function runCommand(command, subcommand, options, auth) {
       if (!options.path) {
         throw new Error('raw requires --path');
       }
+      const apiPath = normalizeApiPath(options.path);
       const response = await auth.raw.request({
-        url: options.path,
+        url: apiPath,
         method: options.method,
         params: options.query,
         data: options.data,
         headers: options.headers,
       });
-      ensureHttpSuccess(response.status, response.statusText, `raw ${options.method} ${options.path}`);
+      ensureHttpSuccess(response.status, response.statusText, `raw ${options.method} ${apiPath}`);
       printJson(response.data);
       return;
     }
@@ -537,13 +546,13 @@ function ensureHttpSuccess(status, statusText, context) {
 function showHelp() {
   process.stdout.write(`Jira CLI for legacy Jira Server\n\n`);
   process.stdout.write(`Most common:\n`);
-  process.stdout.write(`  npm run jira -- auth-test --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- project list --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- issue get --key BOCLAWEE-291 --expand renderedFields --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- bug count --project BOCLAWEE --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- bug list --project BOCLAWEE --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- search --jql "project = BOCLAWEE AND issuetype = Bug" --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  npm run jira -- raw --path /rest/api/2/serverInfo --host http://host:port --username user --password pass\n\n`);
+  process.stdout.write(`  node scripts/jira.js auth-test --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js project list --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js issue get --key BOCLAWEE-291 --expand renderedFields --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js bug count --project BOCLAWEE --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js bug list --project BOCLAWEE --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug" --host http://host:port --username user --password pass\n`);
+  process.stdout.write(`  node scripts/jira.js raw --path rest/api/2/serverInfo --host http://host:port --username user --password pass\n\n`);
   process.stdout.write(`Credentials:\n`);
   process.stdout.write(`  command line only\n`);
 }
