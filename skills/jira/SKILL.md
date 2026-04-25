@@ -9,6 +9,7 @@ description: 查询或读取 Jira Server 数据（项目、Issue、JQL 搜索结
 
 - 必须优先使用 [`scripts/jira.js`](./scripts/jira.js)
 - 默认在 `bash` 环境中执行 `node scripts/jira.js <command>`
+- **执行前必须先 `cd` 到 skill 目录**（即 SKILL.md 所在目录），确保 `scripts/jira.js` 路径正确
 - 如果当前环境没有 `jira.js` 依赖，脚本会提示并自动在当前工作目录安装；不要假设全局安装可直接被模块导入
 
 ---
@@ -116,9 +117,11 @@ const me = await auth.v2.myself.getCurrentUser();
 
 ## `.env` 说明
 
-- 认证成功后自动创建 `cwd/.env`，写入 `JIRA_HOST`、`JIRA_USERNAME`、`JIRA_PASSWORD`
+- `.env` 存储在 **skill 目录**下（即 SKILL.md 同级目录），与脚本一起
 - 安全读写：只操作 `JIRA_*` 开头的 key，不破坏其他 skill 写入的配置
 - 命令行参数优先：`--host`/`--username`/`--password` 会覆盖 `.env` 中的值，成功后自动同步
+- 无论从哪里执行 `node scripts/jira.js`，.env 始终能找到（基于脚本自身路径定位）
+- `.env` 已在仓库 `.gitignore` 中，凭据不会误提交
 
 ---
 

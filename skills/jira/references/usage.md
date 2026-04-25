@@ -24,7 +24,7 @@ node scripts/jira.js --help
 node scripts/jira.js auth-test --host http://your-jira-host:port --username your-username --password your-password
 ```
 
-认证成功后，会自动将凭据写入 `cwd/.env`，包含：
+认证成功后，会自动将凭据写入 **skill 目录**下的 `.env` 文件，包含：
 
 ```env
 JIRA_HOST=http://your-jira-host:port

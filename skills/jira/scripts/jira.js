@@ -16,24 +16,11 @@ let jiraSdkPromise;
 // ─── .env helpers ──────────────────────────────────────────────────────
 
 const JIRA_ENV_KEYS = ['JIRA_HOST', 'JIRA_USERNAME', 'JIRA_PASSWORD'];
+const skillDir = path.dirname(currentDir);
+const envFilePath = path.join(skillDir, '.env');
 
 function findEnvFile() {
-  // Search from cwd upward to currentDir
-  let dir = process.cwd();
-  const envPath = path.join(dir, '.env');
-  if (fs.existsSync(envPath)) {
-    return envPath;
-  }
-  // Fallback: cwd/.env or currentDir/.env
-  const cwdEnv = path.join(process.cwd(), '.env');
-  if (fs.existsSync(cwdEnv)) {
-    return cwdEnv;
-  }
-  const dirEnv = path.join(currentDir, '.env');
-  if (fs.existsSync(dirEnv)) {
-    return dirEnv;
-  }
-  return cwdEnv; // default to cwd/.env
+  return envFilePath;
 }
 
 function parseEnvFile(envPath) {
@@ -103,8 +90,7 @@ export function loadJiraCredentials() {
 }
 
 export function saveJiraCredentials(credentials) {
-  const envPath = findEnvFile();
-  writeEnvFile(envPath, {
+  writeEnvFile(envFilePath, {
     JIRA_HOST: credentials.host,
     JIRA_USERNAME: credentials.username,
     JIRA_PASSWORD: credentials.password,
@@ -276,9 +262,9 @@ export function createLegacyJiraClients(host, cookieHeader, options = {}) {
 async function loadJiraSdk() {
   if (!jiraSdkPromise) {
     jiraSdkPromise = (async () => {
-      const searchBases = [process.cwd(), currentDir];
+      const searchBases = [process.cwd(), skillDir, currentDir];
 
-      for (const base of searchBases) {
+      for (const base of [process.cwd(), skillDir, currentDir]) {
         try {
           const resolved = require.resolve('jira.js', { paths: [base] });
           return import(pathToFileURL(resolved).href);
@@ -290,7 +276,7 @@ async function loadJiraSdk() {
       process.stderr.write("Missing dependency 'jira.js'. Installing it in the current workspace...\n");
       installJiraSdk();
 
-      for (const base of searchBases) {
+      for (const base of [process.cwd(), skillDir, currentDir]) {
         try {
           const resolved = require.resolve('jira.js', { paths: [base] });
           return import(pathToFileURL(resolved).href);
@@ -625,7 +611,7 @@ async function runCommand(command, subcommand, options, auth) {
       // Save credentials to .env after successful auth
       try {
         saveJiraCredentials(auth.credentials);
-        process.stdout.write(`Credentials saved to ${findEnvFile()}\n`);
+        process.stdout.write(`Credentials saved to ${envFilePath}\n`);
       } catch (err) {
         process.stderr.write(`Warning: could not save .env file: ${err.message}\n`);
       }
