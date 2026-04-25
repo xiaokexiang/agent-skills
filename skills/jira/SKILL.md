@@ -36,28 +36,49 @@ node scripts/jira.js --help
 
 ### 规则 2：认证方式
 
-**使用命令行参数传入：**
+**默认从 `.env` 文件读取**（首次使用需要先执行 `auth-test` 生成）：
 
-- `--host <host>` - Jira 地址
-- `--username <username>` - 用户名
-- `--password <password>` - 密码
+- `JIRA_HOST` - Jira 地址
+- `JIRA_USERNAME` - 用户名
+- `JIRA_PASSWORD` - 密码
 
-**配置方式：** 只使用命令行参数
+**首次配置：**
+
+```bash
+node scripts/jira.js auth-test --host http://your-jira-host:port --username your-username --password your-password
+```
+
+认证成功后会自动将凭据写入 `.env`，后续命令无需再传认证参数。
+
+**命令行参数覆盖**：如果通过 `--host`/`--username`/`--password` 传参，会覆盖 `.env` 中的值，成功后自动更新 `.env`。
 
 ---
 
 ## 常用命令
 
+首次配置（自动生成 `.env`）：
+
 ```bash
 node scripts/jira.js auth-test --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js myself --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js project list --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js project get --key BOCLAWEE --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js issue get --key BOCLAWEE-291 --expand renderedFields --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug" --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js bug count --project BOCLAWEE --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js bug list --project BOCLAWEE --max-results 20 --host http://your-jira-host:port --username your-username --password your-password
-node scripts/jira.js raw --path rest/api/2/serverInfo --host http://your-jira-host:port --username your-username --password your-password
+```
+
+后续使用（自动从 `.env` 读取，无需重复传入认证参数）：
+
+```bash
+node scripts/jira.js myself
+node scripts/jira.js project list
+node scripts/jira.js project get --key BOCLAWEE
+node scripts/jira.js issue get --key BOCLAWEE-291 --expand renderedFields
+node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug"
+node scripts/jira.js bug count --project BOCLAWEE
+node scripts/jira.js bug list --project BOCLAWEE --max-results 20
+node scripts/jira.js raw --path rest/api/2/serverInfo
+```
+
+如需切换 Jira 实例，重新执行 `auth-test` 即可：
+
+```bash
+node scripts/jira.js auth-test --host http://another-jira-host:port --username user --password pass
 ```
 
 ---
@@ -69,6 +90,10 @@ node scripts/jira.js raw --path rest/api/2/serverInfo --host http://your-jira-ho
 ```js
 import { createLegacyJiraAuth } from './skills/jira/scripts/jira.js';
 
+// 方式 1：直接调用，会自动从 .env 读取
+const auth = await createLegacyJiraAuth();
+
+// 方式 2：显式传参，覆盖 .env
 const auth = await createLegacyJiraAuth({
   host: 'http://your-jira-host:port',
   username: 'your-username',
@@ -86,6 +111,14 @@ const me = await auth.v2.myself.getCurrentUser();
 - `v3`
 - `agile`
 - `serviceDesk`
+
+---
+
+## `.env` 说明
+
+- 认证成功后自动创建 `cwd/.env`，写入 `JIRA_HOST`、`JIRA_USERNAME`、`JIRA_PASSWORD`
+- 安全读写：只操作 `JIRA_*` 开头的 key，不破坏其他 skill 写入的配置
+- 命令行参数优先：`--host`/`--username`/`--password` 会覆盖 `.env` 中的值，成功后自动同步
 
 ---
 

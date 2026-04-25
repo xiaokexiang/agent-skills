@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -12,9 +13,109 @@ const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 let jiraSdkPromise;
 
+// ─── .env helpers ──────────────────────────────────────────────────────
+
+const JIRA_ENV_KEYS = ['JIRA_HOST', 'JIRA_USERNAME', 'JIRA_PASSWORD'];
+
+function findEnvFile() {
+  // Search from cwd upward to currentDir
+  let dir = process.cwd();
+  const envPath = path.join(dir, '.env');
+  if (fs.existsSync(envPath)) {
+    return envPath;
+  }
+  // Fallback: cwd/.env or currentDir/.env
+  const cwdEnv = path.join(process.cwd(), '.env');
+  if (fs.existsSync(cwdEnv)) {
+    return cwdEnv;
+  }
+  const dirEnv = path.join(currentDir, '.env');
+  if (fs.existsSync(dirEnv)) {
+    return dirEnv;
+  }
+  return cwdEnv; // default to cwd/.env
+}
+
+function parseEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) {
+    return {};
+  }
+  const content = fs.readFileSync(envPath, 'utf-8');
+  const result = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) {
+      continue;
+    }
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function writeEnvFile(envPath, updates) {
+  const existing = parseEnvFile(envPath);
+  // Merge updates into existing (only JIRA_* keys)
+  const merged = { ...existing };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && value !== null) {
+      merged[key] = String(value);
+    }
+  }
+  // Build output: put JIRA_* keys first, then others
+  const lines = [];
+  for (const jiraKey of JIRA_ENV_KEYS) {
+    if (merged[jiraKey] !== undefined) {
+      lines.push(`${jiraKey}=${merged[jiraKey]}`);
+      delete merged[jiraKey];
+    }
+  }
+  // Append remaining keys (from other skills)
+  for (const [key, value] of Object.entries(merged)) {
+    lines.push(`${key}=${value}`);
+  }
+  // Ensure directory exists
+  const dir = path.dirname(envPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf-8');
+}
+
+export function loadJiraCredentials() {
+  const envPath = findEnvFile();
+  const env = parseEnvFile(envPath);
+  return {
+    host: env.JIRA_HOST,
+    username: env.JIRA_USERNAME,
+    password: env.JIRA_PASSWORD,
+  };
+}
+
+export function saveJiraCredentials(credentials) {
+  const envPath = findEnvFile();
+  writeEnvFile(envPath, {
+    JIRA_HOST: credentials.host,
+    JIRA_USERNAME: credentials.username,
+    JIRA_PASSWORD: credentials.password,
+  });
+}
+
+// ─── Credential resolution ────────────────────────────────────────────
+
 export function normalizeHost(host) {
   if (!host) {
-    throw new Error('Missing Jira host. Use --host or set JIRA_HOST.');
+    throw new Error('Missing Jira host. Use --host, set JIRA_HOST in .env, or run auth-test first.');
   }
 
   const normalized = host.replace(/\/+$/u, '');
@@ -23,12 +124,13 @@ export function normalizeHost(host) {
 }
 
 export function resolveCredentials(overrides = {}) {
-  const host = normalizeHost(overrides.host);
-  const username = overrides.username;
-  const password = overrides.password;
+  const defaults = loadJiraCredentials();
+  const host = normalizeHost(overrides.host ?? defaults.host);
+  const username = overrides.username ?? defaults.username;
+  const password = overrides.password ?? defaults.password;
 
   if (!username || !password) {
-    throw new Error('Missing Jira credentials. Use --host --username --password.');
+    throw new Error('Missing Jira credentials. Use --username --password, set JIRA_USERNAME/JIRA_PASSWORD in .env, or run auth-test first.');
   }
 
   return { host, username, password };
@@ -248,6 +350,117 @@ export async function createLegacyJiraAuth(overrides = {}, options = {}) {
   };
 }
 
+// ─── Table output ─────────────────────────────────────────────────────
+
+function flattenObject(row, prefix = '') {
+  const flat = {};
+  for (const [key, value] of Object.entries(row)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      // Extract meaningful sub-fields (name, displayName, key, etc.)
+      if (value.name) {
+        flat[fullKey] = value.name;
+      } else if (value.displayName) {
+        flat[fullKey] = value.displayName;
+      } else if (value.key) {
+        flat[fullKey] = value.key;
+      } else {
+        Object.assign(flat, flattenObject(value, fullKey));
+      }
+    } else if (Array.isArray(value)) {
+      flat[fullKey] = value.map(item =>
+        item && typeof item === 'object'
+          ? (item.name || item.key || item.displayName || JSON.stringify(item))
+          : String(item ?? '')
+      ).join(', ');
+    } else {
+      flat[fullKey] = value === null || value === undefined ? '' : String(value);
+    }
+  }
+  return flat;
+}
+
+function formatCell(text, width) {
+  const padded = text.padEnd(width, ' ');
+  // Handle ANSI-safe: just truncate by char count for simplicity
+  if (padded.length > width) {
+    return ` ${padded.slice(0, width - 2)} `;
+  }
+  return ` ${padded} `;
+}
+
+export function printTable(data) {
+  if (!data) {
+    process.stdout.write('(empty)\n');
+    return;
+  }
+
+  // Normalize data into array of rows
+  let rows;
+  if (Array.isArray(data)) {
+    rows = data;
+  } else if (typeof data === 'object') {
+    // If it has 'issues' array (search results), use that
+    if (Array.isArray(data.issues)) {
+      rows = data.issues;
+    } else {
+      // Single object: wrap in array
+      rows = [data];
+    }
+  } else {
+    process.stdout.write(`${String(data)}\n`);
+    return;
+  }
+
+  if (rows.length === 0) {
+    process.stdout.write('(empty)\n');
+    return;
+  }
+
+  // Flatten all rows and collect all unique columns in order
+  const flatRows = rows.map(row => flattenObject(row));
+  const columns = [];
+  const columnSet = new Set();
+  for (const row of flatRows) {
+    for (const key of Object.keys(row)) {
+      if (!columnSet.has(key)) {
+        columns.push(key);
+        columnSet.add(key);
+      }
+    }
+  }
+
+  if (columns.length === 0) {
+    process.stdout.write('(empty)\n');
+    return;
+  }
+
+  // Calculate column widths (min 3, max 50)
+  const widths = columns.map(col => {
+    const headerWidth = col.length;
+    const maxDataWidth = Math.max(...flatRows.map(row => (row[col] || '').length));
+    return Math.min(Math.max(headerWidth, maxDataWidth, 3), 50);
+  });
+
+  // Build separator line
+  const separator = '+' + widths.map(w => '-'.repeat(w + 2)).join('+') + '+';
+
+  // Print header
+  process.stdout.write(`${separator}\n`);
+  process.stdout.write(`${columns.map((col, i) => formatCell(col, widths[i])).join('|')}\n`);
+  process.stdout.write(`${separator}\n`);
+
+  // Print rows
+  for (const row of flatRows) {
+    const line = columns.map((col, i) => formatCell(row[col] || '', widths[i])).join('|');
+    process.stdout.write(`${line}\n`);
+  }
+
+  process.stdout.write(`${separator}\n`);
+}
+
+// ─── CLI parsing ──────────────────────────────────────────────────────
+
 function parseArgs(argv) {
   const options = {
     host: undefined,
@@ -392,9 +605,7 @@ function normalizeApiPath(value) {
   return value.startsWith('/') ? value : `/${value}`;
 }
 
-function printJson(data) {
-  process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
-}
+// ─── Command dispatch ─────────────────────────────────────────────────
 
 async function runCommand(command, subcommand, options, auth) {
   if (!command || options.help) {
@@ -403,21 +614,29 @@ async function runCommand(command, subcommand, options, auth) {
   }
 
   switch (command) {
-    case 'auth-test':
-      printJson({
+    case 'auth-test': {
+      printTable({
         ok: true,
         authMode: 'basic-bootstrap-cookie-session',
-        user: auth.session.user,
-        cookies: auth.session.cookies,
-        clients: ['v2', 'v3', 'agile', 'serviceDesk'],
+        user: auth.session.user.displayName || auth.session.user.name,
+        emailAddress: auth.session.user.emailAddress || '',
+        cookies: auth.session.cookies.join(', '),
       });
+      // Save credentials to .env after successful auth
+      try {
+        saveJiraCredentials(auth.credentials);
+        process.stdout.write(`Credentials saved to ${findEnvFile()}\n`);
+      } catch (err) {
+        process.stderr.write(`Warning: could not save .env file: ${err.message}\n`);
+      }
       return;
+    }
 
     case 'myself': {
       const data = await auth.v2.myself.getCurrentUser({
         expand: options.expand,
       });
-      printJson(data);
+      printTable(data);
       return;
     }
 
@@ -434,7 +653,20 @@ async function runCommand(command, subcommand, options, auth) {
         expand: options.expand,
         properties: parseCsv(options.properties),
       });
-      printJson(data);
+      // Extract key fields for display
+      const fields = data.fields || {};
+      printTable([{
+        key: data.key,
+        summary: fields.summary || '',
+        status: fields.status?.name || '',
+        assignee: fields.assignee?.displayName || fields.assignee?.name || '',
+        reporter: fields.reporter?.displayName || fields.reporter?.name || '',
+        priority: fields.priority?.name || '',
+        issuetype: fields.issuetype?.name || '',
+        created: fields.created || '',
+        updated: fields.updated || '',
+        description: (fields.description || '').slice(0, 200),
+      }]);
       return;
     }
 
@@ -450,7 +682,20 @@ async function runCommand(command, subcommand, options, auth) {
         maxResults: Number.isFinite(options.maxResults) ? options.maxResults : 50,
         startAt: Number.isFinite(options.startAt) ? options.startAt : 0,
       });
-      printJson(data);
+      // Wrap with total count info
+      const issues = (data.issues || []).map(issue => {
+        const fields = issue.fields || {};
+        return {
+          key: issue.key,
+          summary: fields.summary || '',
+          status: fields.status?.name || '',
+          assignee: fields.assignee?.displayName || fields.assignee?.name || '',
+          priority: fields.priority?.name || '',
+          issuetype: fields.issuetype?.name || '',
+        };
+      });
+      printTable(issues);
+      process.stdout.write(`Total: ${data.total} issues\n`);
       return;
     }
 
@@ -467,11 +712,7 @@ async function runCommand(command, subcommand, options, auth) {
           maxResults: 0,
           startAt: 0,
         });
-        printJson({
-          project: options.project,
-          issuetype: 'Bug',
-          total: data.total,
-        });
+        printTable([{ project: options.project, issuetype: 'Bug', total: data.total }]);
         return;
       }
 
@@ -482,7 +723,18 @@ async function runCommand(command, subcommand, options, auth) {
           maxResults: Number.isFinite(options.maxResults) ? options.maxResults : 20,
           startAt: Number.isFinite(options.startAt) ? options.startAt : 0,
         });
-        printJson(data);
+        const issues = (data.issues || []).map(issue => {
+          const fields = issue.fields || {};
+          return {
+            key: issue.key,
+            summary: fields.summary || '',
+            status: fields.status?.name || '',
+            assignee: fields.assignee?.displayName || fields.assignee?.name || '',
+            priority: fields.priority?.name || '',
+          };
+        });
+        printTable(issues);
+        process.stdout.write(`Total: ${data.total} bugs\n`);
         return;
       }
 
@@ -493,7 +745,13 @@ async function runCommand(command, subcommand, options, auth) {
       if (subcommand === 'list') {
         const response = await auth.raw.get('/rest/api/2/project');
         ensureHttpSuccess(response.status, response.statusText, 'project list');
-        printJson(response.data);
+        const projects = (response.data || []).map(project => ({
+          key: project.key,
+          name: project.name,
+          lead: project.lead?.displayName || project.lead?.name || '',
+          type: project.projectTypeKey || project.type || '',
+        }));
+        printTable(projects);
         return;
       }
 
@@ -506,7 +764,14 @@ async function runCommand(command, subcommand, options, auth) {
           expand: options.expand,
           properties: parseCsv(options.properties),
         });
-        printJson(data);
+        printTable([{
+          key: data.key,
+          name: data.name,
+          lead: data.lead?.displayName || data.lead?.name || '',
+          type: data.projectTypeKey || data.type || '',
+          description: data.description || '',
+          url: data.url || '',
+        }]);
         return;
       }
 
@@ -526,7 +791,15 @@ async function runCommand(command, subcommand, options, auth) {
         headers: options.headers,
       });
       ensureHttpSuccess(response.status, response.statusText, `raw ${options.method} ${apiPath}`);
-      printJson(response.data);
+      // For raw output, try table if it's array/object, fallback to JSON
+      const data = response.data;
+      if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
+        printTable(data);
+      } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+        printTable(data);
+      } else {
+        process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      }
       return;
     }
 
@@ -544,18 +817,30 @@ function ensureHttpSuccess(status, statusText, context) {
 }
 
 function showHelp() {
-  process.stdout.write(`Jira CLI for legacy Jira Server\n\n`);
-  process.stdout.write(`Most common:\n`);
-  process.stdout.write(`  node scripts/jira.js auth-test --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js project list --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js issue get --key BOCLAWEE-291 --expand renderedFields --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js bug count --project BOCLAWEE --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js bug list --project BOCLAWEE --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug" --host http://host:port --username user --password pass\n`);
-  process.stdout.write(`  node scripts/jira.js raw --path rest/api/2/serverInfo --host http://host:port --username user --password pass\n\n`);
-  process.stdout.write(`Credentials:\n`);
-  process.stdout.write(`  command line only\n`);
+  process.stdout.write(`Jira CLI for legacy Jira Server
+
+Credentials: .env file (auto-saved after auth-test) or --host --username --password
+
+Most common:
+  node scripts/jira.js auth-test --host http://host:port --username user --password pass
+  node scripts/jira.js project list
+  node scripts/jira.js issue get --key BOCLAWEE-291
+  node scripts/jira.js bug count --project BOCLAWEE
+  node scripts/jira.js bug list --project BOCLAWEE --max-results 20
+  node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug"
+  node scripts/jira.js raw --path rest/api/2/serverInfo
+
+Optional:
+  --fields <csv>       --expand <value>    --max-results <n>
+  --properties <csv>   --query <json>      --data <json>
+  --method <verb>      --headers <json>
+
+.env keys:
+  JIRA_HOST      JIRA_USERNAME      JIRA_PASSWORD
+`);
 }
+
+// ─── Main ─────────────────────────────────────────────────────────────
 
 async function main() {
   const { command, subcommand, options } = parseArgs(process.argv.slice(2));
