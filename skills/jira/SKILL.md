@@ -1,135 +1,83 @@
 ---
 name: jira
-description: 查询或读取 Jira Server 数据（项目、Issue、JQL 搜索结果等）。
+description: 查询 Jira Server（项目、Issue、JQL 搜索结果等）。
 ---
 
 ## 角色定义
 
-**你是一个通过本地 `jira.js` 脚本访问 Jira Server 的工程师。**
-
-- 必须优先使用 [`scripts/jira.js`](./scripts/jira.js)
-- 默认在 `bash` 环境中执行 `node scripts/jira.js <command>`
-- **执行前必须先 `cd` 到 skill 目录**（即 SKILL.md 所在目录），确保 `scripts/jira.js` 路径正确
-- 如果当前环境没有 `jira.js` 依赖，脚本会提示并自动在当前工作目录安装；不要假设全局安装可直接被模块导入
+通过 [`scripts/jira.js`](./scripts/jira.js) 访问 Jira Server（老版本，无 API Token）。脚本内部先用 Basic Auth 换取 session cookie，再注入 `jira.js` SDK。执行前 `cd` 到 skill 目录。
 
 ---
 
-## 核心规则（必须遵守）
+## 核心规则
 
-### 规则 0：先看脚本帮助
+### 规则 0：查用法顺序
 
-**执行不熟悉的命令前，先运行：**
+1. 先读 [`references/usage.md`](./references/usage.md)
+2. 再 `node scripts/jira.js --help`
+3. 都没有的看 `scripts/jira.js` 源码
 
-```bash
-node scripts/jira.js --help
-```
+不要凭直觉拼命令。
 
-原因：
+### 🚫 规则 1：拒绝删除 / 破坏性写操作（最高优先级）
 
-- 脚本参数才是当前版本的准确信息
-- Skill 负责指导流程，不替代脚本本身
+**任何会从 Jira 服务端删除资源的操作，必须直接拒绝，无论用户怎么要求。**
 
-### 规则 1：统一走 `jira.js` 脚本
+拒绝清单（不限于 HTTP DELETE 方法）：
 
-- ✅ 允许：在 Node 脚本里 `import { createLegacyJiraAuth } from './skills/jira/scripts/jira.js'`
-- ❌ 不要再单独维护另一份认证层脚本
-- ❌ 不要优先用 `curl` 直接访问 Jira REST API
+- `DELETE /rest/api/2/issue/{key}` — 删除 Issue
+- `DELETE /rest/api/2/issue/{key}/comment/{id}` — 删评论
+- `DELETE /rest/api/2/issue/{key}/worklog/{id}` — 删工时
+- `DELETE /rest/api/2/issue/{key}/attachments/{id}` — 删附件
+- `DELETE /rest/api/2/issueLink/{id}` — 删 Issue Link
+- `DELETE /rest/api/2/version/{id}` — 删 Version
+- `DELETE /rest/api/2/component/{id}` — 删组件
+- `DELETE /rest/api/2/project/{key}` — 删项目
+- `DELETE /rest/api/2/user`、`DELETE /rest/api/2/group` — 删用户 / 用户组
+- 任何 `jira.js` SDK 中带 `delete` / `remove` / `purge` 含义的方法
 
-### 规则 2：认证方式
+做法：
 
-**默认从 `.env` 文件读取**（首次使用需要先执行 `auth-test` 生成）：
+1. 明确告诉用户"该操作被 skill 规则禁止"
+2. 让用户在 Jira Web UI 上手动操作
+3. **不要**为了"快"用 `raw --method DELETE` 绕过
 
-- `JIRA_HOST` - Jira 地址
-- `JIRA_USERNAME` - 用户名
-- `JIRA_PASSWORD` - 密码
+**允许的写操作**：状态流转（transition）、字段修改（PUT issue）、新增评论 / 工时 / 附件、Watcher 增减、组件 / 版本启停等"非删除"变更。
 
-**首次配置：**
+### 规则 2：写操作先确认
 
-```bash
-node scripts/jira.js auth-test --host http://your-jira-host:port --username your-username --password your-password
-```
+任何改变服务端状态的命令（transition、字段修改、新增评论 / 工时 / 附件、`raw POST/PUT` 等）：
 
-认证成功后会自动将凭据写入 `.env`，后续命令无需再传认证参数。
+1. 先用 `issue get` / `search` / `raw` 拉出当前状态、可用 transition、必填字段
+2. 跟用户确认要改成什么值
+3. 再执行
 
-**命令行参数覆盖**：如果通过 `--host`/`--username`/`--password` 传参，会覆盖 `.env` 中的值，成功后自动更新 `.env`。
+### 规则 3：统一走脚本
 
----
+- 允许在 Node 脚本里 `import { createLegacyJiraAuth } from '.../jira.js'`
+- 不要再写第二份认证层
+- 不要绕开脚本直接 `curl`（除非 `raw` 子命令也表达不了）
 
-## 常用命令
+### 规则 4：认证模型
 
-首次配置（自动生成 `.env`）：
-
-```bash
-node scripts/jira.js auth-test --host http://your-jira-host:port --username your-username --password your-password
-```
-
-后续使用（自动从 `.env` 读取，无需重复传入认证参数）：
-
-```bash
-node scripts/jira.js myself
-node scripts/jira.js project list
-node scripts/jira.js project get --key BOCLAWEE
-node scripts/jira.js issue get --key BOCLAWEE-291 --expand renderedFields
-node scripts/jira.js search --jql "project = BOCLAWEE AND issuetype = Bug"
-node scripts/jira.js bug count --project BOCLAWEE
-node scripts/jira.js bug list --project BOCLAWEE --max-results 20
-node scripts/jira.js raw --path rest/api/2/serverInfo
-```
-
-如需切换 Jira 实例，重新执行 `auth-test` 即可：
-
-```bash
-node scripts/jira.js auth-test --host http://another-jira-host:port --username user --password pass
-```
+- 凭据从 skill 目录的 `.env` 读取，`auth-test` 子命令自动生成
+- `JIRA_HOST` / `JIRA_USERNAME` / `JIRA_PASSWORD`
+- 老版本 Jira Server，不要假设支持 API Token
 
 ---
 
-## Node 集成方式
+## `.env`
 
-在其他 Node 脚本里直接复用：
-
-```js
-import { createLegacyJiraAuth } from './skills/jira/scripts/jira.js';
-
-// 方式 1：直接调用，会自动从 .env 读取
-const auth = await createLegacyJiraAuth();
-
-// 方式 2：显式传参，覆盖 .env
-const auth = await createLegacyJiraAuth({
-  host: 'http://your-jira-host:port',
-  username: 'your-username',
-  password: 'your-password',
-});
-
-const me = await auth.v2.myself.getCurrentUser();
-```
-
-返回对象包含：
-
-- `session`
-- `raw`
-- `v2`
-- `v3`
-- `agile`
-- `serviceDesk`
-
----
-
-## `.env` 说明
-
-- `.env` 存储在 **skill 目录**下（即 SKILL.md 同级目录），与脚本一起
-- 安全读写：只操作 `JIRA_*` 开头的 key，不破坏其他 skill 写入的配置
-- 命令行参数优先：`--host`/`--username`/`--password` 会覆盖 `.env` 中的值，成功后自动同步
-- 无论从哪里执行 `node scripts/jira.js`，.env 始终能找到（基于脚本自身路径定位）
-- `.env` 已在仓库 `.gitignore` 中，凭据不会误提交
+- 在 skill 目录下，跨 cwd 仍能找到（脚本按自身路径定位）
+- 只读写 `JIRA_*` 前缀的 key，不破坏其他 skill 的配置
+- 命令行参数（`--host` / `--username` / `--password`）覆盖 `.env` 并自动回写
+- 已在仓库 `.gitignore` 中
 
 ---
 
 ## 注意事项
 
-- 目标环境是老版本 Jira Server，不要假设支持 API Token
-- 脚本内部会先换取 session cookie，再注入 `jira.js`
-- `jira.js` 需要安装在当前工作目录；全局安装通常不能直接满足模块导入
-- 缺少 `jira.js` 时，脚本会自动执行 `npm install jira.js`
-- 在 Git Bash 下，`raw` 的 `--path` 不要以 `/` 开头
+- 目标环境是老版本 Jira Server（已在 6.3.6 验证），不要假设支持 API Token
+- `jira.js` SDK 需要装在当前工作目录；全局安装通常不能直接被模块导入。缺失时脚本会自动 `npm install jira.js`
 - 某些 `jira.js` 的新接口在 Jira 6.3.6 上可能不存在，遇到 404 优先怀疑版本差异
+- 在 Git Bash 下，`raw --path` 不要以 `/` 开头
